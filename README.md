@@ -1,76 +1,168 @@
-# 🚀 CryptoPredict Pro: Professional LSTM Price Prediction
+# CryptoPredict Pro 🚀
 
-A full-stack, professional Cryptocurrency Price Prediction platform designed for fintech and trading portfolios. This project leverages an LSTM (Long Short-Term Memory) neural network to predict market direction, integrated with a high-performance FastAPI backend and a premium React dashboard.
+> **Real-time Bitcoin price direction prediction using a multi-timeframe XGBoost model, served via FastAPI and visualised in a React dashboard.**
 
-![CryptoPredict Dashboard](https://images.unsplash.com/photo-1621761191319-c6fb62004040?q=80&w=1200&auto=format&fit=crop) *(Example Image Placeholder)*
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://reactjs.org)
+[![XGBoost](https://img.shields.io/badge/XGBoost-2.x-orange)](https://xgboost.readthedocs.io)
+[![Render](https://img.shields.io/badge/deployed%20on-Render-46E3B7?logo=render)](https://render.com)
 
-## 🌟 Key Features
-- **AI-Powered Predictions**: Custom LSTM model built with PyTorch to forecast UP/DOWN movements.
-- **Real-time Pipeline**: Direct integration with Binance API for live and historical market data.
-- **Professional Dashboard**: Premium dark-mode UI built with React, Tailwind CSS, and Framer Motion.
-- **Interactive Analytics**: Dynamic charts showing historical price action vs. AI analysis.
-- **Robust API**: Scalable FastAPI backend with Pydantic validation and SQLite persistence.
+---
 
-## 🏗️ Technical Architecture
-- **Backend**: FastAPI (Python 3.10+)
-- **Machine Learning**: PyTorch, Scikit-Learn, Pandas
-- **Frontend**: React (Vite+TypeScript), Tailwind CSS, Recharts, Framer Motion
-- **Data Source**: Binance Spot API
+## 🧠 What this project does
 
-## 📂 Project Structure
-```text
-├── backend/            # FastAPI Application
-│   ├── app/            # Main application logic
-│   │   ├── api/        # API Endpoints
-│   │   ├── core/       # DB and Configuration
-│   │   ├── models/     # DB Models (SQLAlchemy)
-│   │   └── services/   # Business logic & Inference
-├── ml_service/         # Machine Learning Pipeline
-│   ├── models/         # Saved PyTorch models & Scalers
-│   ├── src/            # Data engineering & Training
-│   └── data/           # Historical data storage
-└── frontend/           # React Dashboard
-    └── src/            # Components, Pages & UI logic
+CryptoPredict Pro trains an **XGBoost Gradient Boosting** classifier on 7 years of BTC/USDT price data (2018–2025), with engineered features across four timeframes: **15m**, **1h**, **4h**, **1d**.
+
+At runtime it:
+1. Downloads the latest 1,000 candles per timeframe live from **Binance API**.
+2. Runs the same feature engineering pipeline used during training.
+3. Produces a directional signal: **BUY / SELL / HOLD** and a confidence probability.
+4. Persists every prediction to **Supabase** for historical analysis.
+5. Serves everything via a **FastAPI REST API** consumed by a **React + Tailwind** dashboard.
+
+---
+
+## 📐 Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│              React + Vite Frontend           │
+│   Framer Motion · Recharts · Lucide Icons   │
+└──────────────┬──────────────────────────────┘
+               │  Fetch /api/v1/predict & /history
+┌──────────────▼──────────────────────────────┐
+│             FastAPI (Python 3.12)            │
+│   /predict  ·  /history  ·  /model-info     │
+└──────┬──────────────────────┬───────────────┘
+       │                      │
+┌──────▼──────┐       ┌───────▼───────┐
+│  ML Service  │       │   Supabase    │
+│  XGBoost     │       │  (PostgreSQL) │
+│  + Scaler    │       │  predictions  │
+└──────┬──────┘       └───────────────┘
+       │
+┌──────▼──────┐
+│  Binance   │
+│  REST API  │
+│  4 TFs live│
+└────────────┘
 ```
 
-## 🚀 Quick Start
+---
 
-### 1. Requirements
-Ensure you have Python 3.10+ and Node.js installed.
+## 🔬 Machine Learning Pipeline
 
-### 2. Backend Setup
+### Feature Engineering (52 features across 4 timeframes)
+
+| Category | Features |
+|---|---|
+| **Candle structure (1h)** | `body_ratio`, `upper_wick`, `lower_wick`, `body_size`, `is_bullish` |
+| **Momentum (1h)** | `ret_1h`, `ret_4h`, `ret_12h`, `ret_24h`, `ret_48h`, `ret_168h`, `mom_accel_*` |
+| **Volume (1h)** | `rel_vol_24`, `vol_price_corr`, `vwap_dist`, `taker_ratio_1h` |
+| **Volatility** | `atr_rel`, `atr_change`, `vol_regime` |
+| **4h context** | `body_4h`, `ret_1c_4h`, `divergence_1v4`, `taker_div_4h` |
+| **15m micro** | `body_15m`, `ret_1c_15m`, `mom_accel_15m`, `taker_15m` |
+| **1d macro** | `ret_1d`, `ret_7d`, `d_pos`, `above_d_close` |
+| **Open Interest** | `oi_rel`, `oi_chg_1h`, `oi_chg_8h` |
+| **Long/Short ratio** | `ls_ratio_feat`, `ls_vs_sma` |
+| **Cyclical time** | `hour_sin`, `hour_cos`, `dow_sin`, `dow_cos` |
+
+### Labeling Method
+**Triple Barrier** with ATR-scaled Take-Profit / Stop-Loss and a neutral (timeout) class — a method popularised by Marcos López de Prado in *Advances in Financial Machine Learning*.
+
+### Training Metrics
+| Metric | Value |
+|---|---|
+| Accuracy | 52.80% |
+| Precision | 46.95% |
+| Threshold (Long) | > 0.539 |
+| Threshold (Exit) | < 0.502 |
+
+> **Note:** Beating 50% consistently on directional prediction for BTC is non-trivial. The model has built-in hysteresis (asymmetric thresholds) to reduce excessive trading and commission cost.
+
+---
+
+## 🚀 Running Locally
+
+### Prerequisites
+- Python 3.12
+- Node.js 20+
+- A Binance account (public API, no keys needed for read-only)
+- A Supabase project (free tier works)
+
+### 1. Clone and install
+
 ```bash
-# Install dependencies
+git clone https://github.com/your-username/crypto-pro.git
+cd crypto-pro
+```
+
+### 2. Backend
+
+```bash
 pip install -r requirements.txt
-
-# Run the API
-python backend/app/main.py
+cp .env.example .env    # add your SUPABASE_URL and SUPABASE_KEY
+python -m uvicorn backend.app.main:app --reload
 ```
 
-### 3. ML Pipeline (Training)
-```bash
-# Fetch data and train the model
-python ml_service/src/train.py
-```
+API will be at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
 
-### 4. Frontend Setup
+### 3. Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## 📊 Model Performance
-- **Target**: Next-hour price movement (Binary Classification)
-- **Architecture**: 2-layer LSTM with Dropout
-- **Indicators**: RSI, MA(7), MA(25), Volume
-- **Accuracy**: ~78% (on historical test sets)
-
-## 💡 Hireable Qualities
-- **Modular Code**: Clean separation of concerns (Inference vs Training vs API).
-- **Error Handling**: Robust Pydantic validation and HTTP exception handling.
-- **Scalability**: Designed to handle multiple symbols and real-time streams.
-- **Aesthetics**: High-fidelity UI that demonstrates product-thinking for fintech.
+Dashboard at `http://localhost:5173`.
 
 ---
-Built with ❤️ for Technical Portfolios.
+
+## 📡 API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/predict/{symbol}` | Run model inference on live data |
+| `GET` | `/api/v1/history/{symbol}` | Last 24h of hourly closing prices |
+| `GET` | `/api/v1/model-info` | Model metadata, features and training metrics |
+| `GET` | `/health` | Health check |
+
+---
+
+## 🛠 Tech Stack
+
+**Backend:** Python 3.12, FastAPI, XGBoost, pandas, pandas-ta, python-binance, Supabase (PostgreSQL), joblib
+
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS v3, Framer Motion, Recharts, Lucide React
+
+**Deployment:** Render (Web Service), Supabase (managed DB)
+
+---
+
+## 📂 Project Structure
+
+```
+crypto-pro/
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/endpoints.py   # FastAPI routes
+│   │   ├── core/database.py      # Supabase client
+│   │   ├── models_files/         # Trained model + scaler + metadata
+│   │   └── services/predictor.py # Orchestrates inference
+│   └── ml_service/src/
+│       ├── data_loader.py        # Binance multi-timeframe downloader
+│       ├── preprocessing_v2.py   # Feature engineering (52 features)
+│       └── final_model.py        # Training pipeline
+└── frontend/
+    └── src/
+        ├── pages/Dashboard.tsx   # Main UI component
+        └── index.css             # Tailwind + custom design system
+```
+
+---
+
+## 📝 Disclaimer
+
+This project is for **educational and portfolio purposes only**. Do not use it to make real trading decisions. Past model performance does not guarantee future results.

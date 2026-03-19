@@ -100,24 +100,26 @@
   }
 
   /* Utility classes for primary colors */
-  @utility bg-primary {
-    background-color: #3b82f6;
-  }
+  @layer utilities {
+    .bg-primary {
+      background-color: #3b82f6;
+    }
 
-  @utility bg-primary-dark {
-    background-color: #1e40af;
-  }
+    .bg-primary-dark {
+      background-color: #1e40af;
+    }
 
-  @utility text-primary {
-    color: #3b82f6;
-  }
+    .text-primary {
+      color: #3b82f6;
+    }
 
-  @utility text-accent {
-    color: #a78bfa;
-  }
+    .text-accent {
+      color: #a78bfa;
+    }
 
-  @utility border-l-primary {
-    border-left-color: #3b82f6;
+    .border-l-primary {
+      border-left-color: #3b82f6;
+    }
   }
 
   /* Pulse animation */

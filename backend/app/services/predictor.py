@@ -50,9 +50,9 @@ class PredictorService:
         if not hasattr(self, 'model') or self.model is None:
             self.load_resources()
             
-        # 1. Datos en vivo (Pedimos 500 para que los indicadores tengan margen)
+        # 1. Datos en vivo (Pedimos 1000 para que el timeframe de 15m cubra más de 168 horas)
         loader = BinanceDataLoader()
-        df_raw = loader.fetch_multi_timeframe(limit=500) # <--- Aumentamos a 500
+        df_raw = loader.fetch_multi_timeframe(limit=1000) # <--- Asegura 250h en velas de 15m
         
         if df_raw is None or df_raw.empty:
             raise Exception("Error: El cargador de datos no devolvió información.")

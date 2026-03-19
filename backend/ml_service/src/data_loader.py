@@ -19,7 +19,7 @@ class BinanceDataLoader:
             "1d": "1d"
         }
 
-    def fetch_multi_timeframe(self, symbol="BTCUSDT", limit=100) -> pd.DataFrame:
+    def fetch_multi_timeframe(self, symbol="BTCUSDT", limit=1000) -> pd.DataFrame:
         logger.info(f"Descargando datos en vivo de Binance para {symbol}...")
         
         try:
@@ -28,7 +28,9 @@ class BinanceDataLoader:
                 # Un pequeño respiro para evitar bloqueos por velocidad
                 time.sleep(0.5) 
                 
-                klines = self.client.klines(symbol, tf_binance, limit=limit + 50)
+                # Binance max limit is 1000. Si pedimos más, fallará.
+                actual_limit = min(1000, limit)
+                klines = self.client.klines(symbol, tf_binance, limit=actual_limit)
                 
                 # Validación de seguridad: si klines no trae nada, lanzamos error
                 if not klines:

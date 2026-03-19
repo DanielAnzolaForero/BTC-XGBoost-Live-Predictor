@@ -1,23 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, Activity, DollarSign,
+  TrendingUp, TrendingDown, Activity,
   RefreshCw, Github, Zap, ShieldCheck, Sparkles, AlertCircle
 } from 'lucide-react';
 import { motion, type Variants } from 'framer-motion';
 
 
-// Mock data for initial design
-const mockHistory = [
-  { time: '10:00', price: 65200 },
-  { time: '11:00', price: 65800 },
-  { time: '12:00', price: 65400 },
-  { time: '13:00', price: 66100 },
-  { time: '14:00', price: 66900 },
-  { time: '15:00', price: 67200 },
-];
+// No longer need mockHistory, we will fetch real data from our backend
 
 // Animation variants
 const containerVariants: Variants = {
@@ -58,41 +50,81 @@ const cardHoverVariants: Variants = {
   },
 };
 
-const pulseVariants = {
-  pulse: {
-    opacity: [1, 0.5, 1],
-    transition: {
-      duration: 2,
-      repeat: Infinity,
-      ease: "easeInOut",
-    },
-  },
-};
+
 
 const Dashboard = () => {
-  const [prediction, setPrediction] = useState<{ direction: 'UP' | 'DOWN', prob: number } | null>({
+  const [prediction, setPrediction] = useState<{ direction: 'UP' | 'DOWN' | 'HOLD', prob: number } | null>({
     direction: 'UP',
     prob: 0.87
   });
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [chartData, setChartData] = useState(mockHistory);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [chartData, setChartData] = useState<{ time: string, price: number }[]>([]);
+
+  // Load real 24h history on mount
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsLoadingHistory(true);
+      try {
+        const res = await fetch('/api/v1/history/BTCUSDT');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.history && data.history.length > 0) {
+            setChartData(data.history);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch initial history:", err);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+    fetchHistory();
+  }, []);
 
   // Simulate analysis
-  const handleAnalysis = () => {
+  const handleAnalysis = async () => {
     setIsAnalyzing(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/v1/predict/BTCUSDT');
+      if (!response.ok) {
+        throw new Error('Error de red al contactar la API');
+      }
+      
+      const data = await response.json();
+      
+      // Mapeamos la respuesta del backend (BUY, SELL, HOLD) al UI
+      let dir: 'UP' | 'DOWN' | 'HOLD' = 'HOLD';
+      if (data.prediction === 'BUY') dir = 'UP';
+      if (data.prediction === 'SELL') dir = 'DOWN';
+      
       setPrediction({
-        direction: Math.random() > 0.5 ? 'UP' : 'DOWN',
-        prob: Math.random() * 0.3 + 0.65,
+        direction: dir,
+        prob: data.probability,
       });
+
+      // Actualizamos el gráfico con el precio real
+      const timeStr = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setChartData(prev => {
+        const newData = [...prev.slice(1), { time: timeStr, price: data.current_price }];
+        return newData;
+      });
+
+    } catch (error) {
+      console.error("Error fetching prediction:", error);
+      setFetchError("Backend unreachable. Make sure FastAPI is running on port 8000.");
+      // Clear error after 5 seconds
+      setTimeout(() => setFetchError(null), 5000);
+    } finally {
       setIsAnalyzing(false);
-    }, 2000);
+    }
   };
 
   return (
     <motion.div
-      className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-foreground p-6"
+      className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-6"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -249,12 +281,40 @@ const Dashboard = () => {
               </div>
             </div>
 
+            {/* Error Toast */}
+            {fetchError && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mb-4 flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {fetchError}
+              </motion.div>
+            )}
+
+            {/* Chart or Skeleton */}
             <motion.div
               className="h-[350px] w-full"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5, duration: 0.8 }}
             >
+              {isLoadingHistory ? (
+                <div className="h-full flex flex-col justify-end gap-2 animate-pulse">
+                  <div className="flex items-end gap-1 h-[280px]">
+                    {[40, 55, 45, 70, 60, 80, 65, 75, 55, 85, 70, 90].map((h, i) => (
+                      <div
+                        key={i}
+                        className="flex-1 bg-blue-500/10 rounded-t-sm border-t border-blue-500/20"
+                        style={{ height: `${h}%` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="h-4 bg-white/5 rounded w-full" />
+                </div>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
@@ -287,6 +347,7 @@ const Dashboard = () => {
                   />
                 </AreaChart>
               </ResponsiveContainer>
+              )}
             </motion.div>
           </motion.div>
         </motion.div>
@@ -322,8 +383,10 @@ const Dashboard = () => {
 
               <div className="text-center py-6">
                 <motion.div
-                  className={`text-5xl font-bold mb-2 flex items-center justify-center gap-2 ${prediction?.direction === 'UP' ? 'text-green-500' : 'text-red-500'
-                    }`}
+                  className={`text-5xl font-bold mb-2 flex items-center justify-center gap-2 ${
+                    prediction?.direction === 'UP' ? 'text-green-500' : 
+                    prediction?.direction === 'DOWN' ? 'text-red-500' : 'text-yellow-500'
+                  }`}
                   animate={{
                     scale: [1, 1.1, 1],
                   }}
@@ -345,7 +408,7 @@ const Dashboard = () => {
                     >
                       <TrendingUp className="w-10 h-10" />
                     </motion.div>
-                  ) : (
+                  ) : prediction?.direction === 'DOWN' ? (
                     <motion.div
                       animate={{ y: [5, -5, 5] }}
                       transition={{
@@ -355,6 +418,17 @@ const Dashboard = () => {
                       }}
                     >
                       <TrendingDown className="w-10 h-10" />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    >
+                      <Activity className="w-10 h-10" />
                     </motion.div>
                   )}
                   {prediction?.direction}
