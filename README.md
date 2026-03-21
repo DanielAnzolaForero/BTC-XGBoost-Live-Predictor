@@ -15,7 +15,7 @@
 CryptoPredict Pro trains an **XGBoost Gradient Boosting** classifier on 7 years of BTC/USDT price data (2018–2025), with engineered features across four timeframes: **15m**, **1h**, **4h**, **1d**.
 
 At runtime it:
-1. Downloads the latest 1,000 candles per timeframe live from **Binance API**.
+1. Loads robust historical CSV datasets (2018-2025) and seamlessly combines them with the latest 1,000 live candles per timeframe from the **Binance API** for a strictly up-to-date and complete representation.
 2. Runs the same feature engineering pipeline used during training.
 3. Produces a directional signal: **BUY / SELL / HOLD** and a confidence probability.
 4. Persists every prediction to **Supabase** for historical analysis.

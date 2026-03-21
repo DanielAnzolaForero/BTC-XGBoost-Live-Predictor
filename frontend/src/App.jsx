@@ -21,7 +21,7 @@ const itemVariants = {
 };
 
 export default function App() {
-  const { history, latest, loading, error, fetchCount, refresh } = useVortex();
+  const { history, latest, loading, error, fetchCount, refresh, timeframe, setTimeframe } = useVortex();
   const [dismissedError, setDismissedError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState("—");
 
@@ -55,11 +55,14 @@ export default function App() {
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <PriceChart history={history}/>
-        </motion.div>
-
-        <motion.div variants={itemVariants}>
-          <HistoryTable history={history}/>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PriceChart history={history} />
+            <HistoryTable
+              history={history}
+              timeframe={timeframe}
+              setTimeframe={setTimeframe}
+            />
+          </div>
         </motion.div>
       </motion.main>
 

@@ -1,88 +1,91 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { API_URL, SB_URL, SB_KEY, SB_TABLE, MAX_HISTORY, REFRESH_INTERVAL } from "../lib/config";
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { SB_URL, SB_KEY, SB_TABLE, API_URL, REFRESH_INTERVAL, MAX_HISTORY } from "../lib/config";
 import { parseAPIRow, parseSupabaseRow } from "../lib/parser";
 
+const supabase = createClient(SB_URL, SB_KEY);
+
 export function useVortex() {
-  const [history, setHistory]       = useState([]);
-  const [latest, setLatest]         = useState(null);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState(null);
+  const [timeframe, setTimeframe] = useState("1h");
+  const [histories, setHistories]  = useState({ "15m": [], "1h": [], "4h": [], "12h": [], "24h": [] });
+  const [latest, setLatest]       = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
   const [fetchCount, setFetchCount] = useState(0);
-  const [sbLoaded, setSbLoaded]     = useState(false);
-  const timerRef                    = useRef(null);
 
-  // ── Load Supabase history ──────────────────────────────────
-  const loadSupabase = useCallback(async () => {
+  // 1. Cargar historial de Supabase para un timeframe específico
+  const loadSupabase = useCallback(async (tf) => {
     try {
-      const url = `${SB_URL}/rest/v1/${SB_TABLE}`
-        + `?select=id,created_at,symbol,prediction,probability,price_at_prediction`
-        + `&order=created_at.desc&limit=${MAX_HISTORY}`;
+      const { data, error: sbErr } = await supabase
+        .from(SB_TABLE)
+        .select("*")
+        .eq("timeframe", tf)
+        .order("created_at", { ascending: false })
+        .limit(MAX_HISTORY);
 
-      const res = await fetch(url, {
-        headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, Accept: "application/json" },
-      });
-      if (!res.ok) throw new Error(`Supabase ${res.status}`);
-      const rows = await res.json();
-      if (Array.isArray(rows) && rows.length) {
-        const parsed = rows.map(parseSupabaseRow);
-        setHistory(parsed);
+      if (sbErr) throw sbErr;
+      
+      const parsed = (data || []).map(parseSupabaseRow);
+      setHistories(prev => ({ ...prev, [tf]: parsed }));
+      
+      if (parsed.length > 0 && tf === timeframe && !latest) {
         setLatest(parsed[0]);
       }
-    } catch (e) {
-      console.warn("Supabase load failed:", e.message);
-    } finally {
-      setSbLoaded(true);
+    } catch (err) {
+      console.error(`Error Supabase [${tf}]:`, err);
     }
-  }, []);
+  }, [timeframe, latest]);
 
-  // ── Fetch live signal ──────────────────────────────────────
-  const fetchLive = useCallback(async () => {
-    setLoading(true);
+  // 2. Fetch en vivo (API devuelve el de 1h como resp principal, pero guarda todos en DB)
+  const refresh = useCallback(async () => {
+    // No ponemos loading=true aquí para evitar flashes
     setError(null);
     try {
-      const ctrl = new AbortController();
-      const tid  = setTimeout(() => ctrl.abort(), 15_000);
-      const res  = await fetch(API_URL, {
-        method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal,
-      });
-      clearTimeout(tid);
-      if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
       const data = await res.json();
-      if (!data.prediction)    throw new Error('Campo "prediction" ausente.');
-      if (!data.current_price) throw new Error('Campo "current_price" ausente.');
-
+      
       const entry = parseAPIRow(data);
-      setFetchCount(c => c + 1);
       setLatest(entry);
-      setHistory(prev => {
-        const last = prev[0];
-        const dupe = last &&
-          last.price === entry.price &&
-          last.label === entry.label &&
-          last.conf  === entry.conf;
-        if (dupe) return prev;
-        const next = [entry, ...prev];
-        return next.length > MAX_HISTORY ? next.slice(0, MAX_HISTORY) : next;
-      });
+      setFetchCount(c => c + 1);
+
+      // Despues de predecir, recargamos el historial del TF actual para ver la nueva fila
+      await loadSupabase(timeframe);
     } catch (err) {
-      let msg = err.message;
-      if (err.name === "AbortError")       msg = "Timeout (15s) — Render puede estar dormido. Intenta de nuevo.";
-      if (msg.includes("Failed to fetch")) msg = "Error de red o CORS. Verifica CORSMiddleware en tu FastAPI.";
-      setError(msg);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadSupabase, timeframe]);
 
-  // ── Init ──────────────────────────────────────────────────
+  // Efecto inicial
   useEffect(() => {
-    (async () => {
-      await loadSupabase();
-      await fetchLive();
-      timerRef.current = setInterval(fetchLive, REFRESH_INTERVAL);
-    })();
-    return () => clearInterval(timerRef.current);
-  }, []);
+    const init = async () => {
+      setLoading(true);
+      await loadSupabase("1h");
+      // Carga perezosa de los demás
+      ["15m", "4h", "12h", "24h"].forEach(tf => loadSupabase(tf));
+      setLoading(false);
+    };
+    init();
 
-  return { history, latest, loading, error, fetchCount, sbLoaded, refresh: fetchLive };
+    const interval = setInterval(refresh, REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [refresh, loadSupabase]);
+
+  // Recargar si cambia el timeframe
+  useEffect(() => {
+    loadSupabase(timeframe);
+  }, [timeframe, loadSupabase]);
+
+  return {
+    timeframe,
+    setTimeframe,
+    history: histories[timeframe] || [],
+    latest,
+    loading,
+    error,
+    fetchCount,
+    refresh
+  };
 }

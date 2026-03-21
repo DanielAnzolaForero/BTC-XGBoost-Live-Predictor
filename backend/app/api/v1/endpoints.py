@@ -21,28 +21,26 @@ class PredictionResponse(BaseModel):
     prediction: str
     probability: float
     current_price: float
+    timeframe: str = "1h"
 
 # 2. Endpoint principal de predicción
 @router.get("/predict/{symbol}", response_model=PredictionResponse)
 def get_prediction(symbol: str):
     try:
-        log.info("Prediction request received for %s", symbol.upper())
+        log.info("Prediction request received for %s (Multi-TF)", symbol.upper())
 
-        # A. Instanciar servicio y calcular predicción
+        # A. Instanciar servicio y calcular predicciones (devuelve un dict {tf: res})
         predictor = PredictorService(symbol=symbol.upper())
-        result = predictor.predict_next()
+        all_results = predictor.predict_next()
 
-        # B. Guardar en Supabase (fire-and-forget, no bloqueamos al usuario)
-        log.info("Prediction generated: %s — saving to Supabase", result)
-        db_response = guardar_prediccion(result)
+        # B. Guardar cada horizonte en Supabase
+        for tf, res in all_results.items():
+            db_res = guardar_prediccion(res)
+            if not db_res:
+                log.warning("Failed to save horizon %s to Supabase", tf)
 
-        if db_response:
-            log.info("Supabase INSERT successful")
-        else:
-            log.warning("Prediction done, but Supabase INSERT returned no response")
-
-        # C. Retornar JSON al frontend
-        return result
+        # C. Retornar el de 1h como principal para el UI actual
+        return all_results.get("1h", list(all_results.values())[0])
 
     except Exception as e:
         log.exception("Critical error in /predict endpoint: %s", e)
@@ -70,13 +68,9 @@ def get_history(symbol: str):
         log.error("Failed to fetch history from Binance: %s", e)
         return {"symbol": symbol.upper(), "history": []}
 
-# 4. Endpoint de información del modelo (para el portfolio)
+# 4. Endpoint de información del modelo
 @router.get("/model-info")
 def get_model_info():
-    """
-    Returns model metadata, features, thresholds, and training metrics.
-    Useful to expose transparency and confidence in the ML model.
-    """
     try:
         meta_path = os.path.normpath(_METADATA_PATH)
         if not os.path.exists(meta_path):
@@ -89,7 +83,7 @@ def get_model_info():
             "model": "XGBoost Gradient Boosting",
             "symbol": meta.get("symbol", "BTCUSDT"),
             "num_features": len(meta.get("features", [])),
-            "timeframes": ["15m", "1h", "4h", "1d"],
+            "timeframes": ["15m", "1h", "4h", "12h", "24h"],
             "labeling_method": "Triple Barrier",
             "thresholds": meta.get("thresholds", {}),
             "metrics_at_train": meta.get("metrics_at_train", {}),

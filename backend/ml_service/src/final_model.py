@@ -34,7 +34,7 @@ try:
 except ImportError:
     _HAS_EXTRAS = False
 
-DATA_DIR = r"C:\Users\USUARIO\.gemini\antigravity\playground\proyectos\crypto-pro\ml_service\src"
+DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 SYMBOL   = "BTCUSDT"
 SEQ_LEN  = 30
 

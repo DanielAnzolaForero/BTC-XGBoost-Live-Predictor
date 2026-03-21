@@ -22,13 +22,14 @@ def guardar_prediccion(data_dict: dict):
     try:
         data_final = {
             "symbol":             data_dict.get("symbol"),
+            "timeframe":          data_dict.get("timeframe", "1h"),
             "prediction":         data_dict.get("prediction"),
             "probability":        float(data_dict.get("probability", 0)),
             "price_at_prediction": float(
                 data_dict.get("price_at_prediction") or data_dict.get("current_price") or 0
             )
         }
-        log.debug("Inserting prediction into Supabase: %s", data_final)
+        log.debug("Inserting prediction [%s] into Supabase: %s", data_dict.get("timeframe"), data_final)
         response = supabase.table("btc_predictions").insert(data_final).execute()
         return response
     except Exception as e:

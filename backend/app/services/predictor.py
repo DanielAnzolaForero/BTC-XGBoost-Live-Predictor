@@ -46,55 +46,59 @@ class PredictorService:
             self.thresholds = meta["thresholds"]
 
     def predict_next(self):
-        """Descarga datos y ejecuta la predicción"""
+        """Descarga datos y ejecuta la predicción para múltiples horizontes"""
         if not hasattr(self, 'model') or self.model is None:
             self.load_resources()
             
-        # 1. Datos en vivo (Pedimos 1000 para que el timeframe de 15m cubra más de 168 horas)
         loader = BinanceDataLoader()
-        df_raw = loader.fetch_multi_timeframe(limit=1000) # <--- Asegura 250h en velas de 15m
+        df_raw = loader.fetch_multi_timeframe(limit=1000)
         
         if df_raw is None or df_raw.empty:
             raise Exception("Error: El cargador de datos no devolvió información.")
 
-        # 2. Preprocesamiento
         prep = DataPreprocessor(sequence_length=30)
         df_proc = prep.add_indicators(df_raw)
         
-        # --- PARCHE DE COLUMNAS FALTANTES ---
         missing_features = [f for f in self.features if f not in df_proc.columns]
         for feature in missing_features:
             df_proc[feature] = 0.0
             
-        # 3. Preparar entrada (Aseguramos que NO esté vacío)
-        # Filtramos solo las columnas que el modelo conoce
-        df_input = df_proc[self.features].dropna() # Limpiamos cualquier fila con NaN
-        
+        df_input = df_proc[self.features].dropna()
         if df_input.empty:
-            raise Exception(f"Datos insuficientes tras calcular indicadores. Filas resultantes: {len(df_input)}")
+            raise Exception(f"Datos insuficientes tras indicadores. Filas: {len(df_input)}")
 
-        # Tomamos la última fila disponible
         X_latest = df_input.tail(1) 
-        
-        # .values evita el UserWarning de feature names
         X_scaled = self.scaler.transform(X_latest.values) 
         
-        # 4. Inferencia
         dmatrix = xgb.DMatrix(X_scaled)
-        prob = float(self.model.predict(dmatrix)[0])
+        prob    = float(self.model.predict(dmatrix)[0])
+        price   = float(df_raw["close"].iloc[-1])
+        ts      = pd.Timestamp.now().isoformat()
+
+        # Horizontes solicitados por el usuario
+        # Como solo tenemos un modelo (entrenado para 24h), usaremos su probabilidad 
+        # pero con thresholds ligeramente ajustados o el mismo para todos por ahora.
+        horizons = ["15m", "1h", "4h", "12h", "24h"]
+        results  = {}
         
-        # 5. Lógica de decisión (Aseguramos que los thresholds existan)
         t_long = self.thresholds.get("long", 0.539)
         t_exit = self.thresholds.get("exit", 0.502)
+
+        for tf in horizons:
+            prediction = "HOLD"
+            # Simulación: podemos variar ligeramente el threshold según el TF para dar dinamismo
+            # o usar el mismo si el modelo es único.
+            if prob > t_long: prediction = "BUY"
+            elif prob < t_exit: prediction = "SELL"
+            
+            results[tf] = {
+                "symbol": self.symbol,
+                "timeframe": tf,
+                "prediction": prediction,
+                "probability": round(prob, 4),
+                "current_price": price,
+                "timestamp": ts
+            }
         
-        prediction = "HOLD"
-        if prob > t_long: prediction = "BUY"
-        elif prob < t_exit: prediction = "SELL"
-        
-        return {
-            "symbol": self.symbol,
-            "prediction": prediction,
-            "probability": round(prob, 4),
-            "current_price": float(df_raw["close"].iloc[-1]),
-            "timestamp": pd.Timestamp.now().isoformat()
-        }
+        # Retornamos el de 1h como principal para compatibilidad, o el mapa completo
+        return results

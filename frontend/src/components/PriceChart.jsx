@@ -6,8 +6,10 @@ import { CHART_MAX_PTS } from "../lib/config";
 
 const WINDOWS = [
   { label: "15m", minutes: 15 },
-  { label: "30m", minutes: 30 },
   { label: "1h",  minutes: 60 },
+  { label: "4h",  minutes: 240 },
+  { label: "12h", minutes: 720 },
+  { label: "24h", minutes: 1440 },
   { label: "sesión", minutes: 0 },
 ];
 
